@@ -1,0 +1,444 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PUBLIC_USER
+  DOCTOR
+  HOSPITAL
+  AMBULANCE
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  PENDING_DOCUMENTS
+}
+
+enum EmergencySeverity {
+  CRITICAL
+  URGENT
+  NORMAL
+  LOW
+}
+
+enum EmergencyStatus {
+  PENDING
+  CLASSIFIED
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ResourceType {
+  ICU
+  NICU
+  VENTILATOR
+  BLOOD_UNIT
+  GENERAL_BED
+}
+
+enum ResourceStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+}
+
+enum BloodType {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  COMPLETED
+}
+
+enum NotificationType {
+  EMERGENCY_ALERT
+  RESERVATION_CONFIRMED
+  RESERVATION_CANCELLED
+  BLOOD_REQUEST_STATUS
+  RESOURCE_UPDATE
+  SYSTEM_ALERT
+  GENERAL
+  AMBULANCE_UPDATE
+}
+
+enum AmbulanceStatus {
+  AVAILABLE
+  DISPATCHED
+  EN_ROUTE
+  AT_SCENE
+  RETURNING
+  MAINTENANCE
+}
+
+model User {
+  id                String     @id @default(uuid()) @db.Uuid
+  email             String     @unique
+  passwordHash      String     @map("password_hash")
+  fullName          String     @map("full_name")
+  phone             String?
+  role              Role       @default(PUBLIC_USER)
+  status            UserStatus @default(PENDING_VERIFICATION)
+  profilePictureUrl String?    @map("profile_picture_url")
+  emailVerified     Boolean    @default(false) @map("email_verified")
+  verificationToken String?    @map("verification_token")
+  resetPasswordToken String?   @map("reset_password_token")
+  resetPasswordExpires DateTime? @map("reset_password_expires") @db.Timestamptz
+  mfaSecret         String?    @map("mfa_secret")
+  mfaEnabled        Boolean    @default(false) @map("mfa_enabled")
+  failedLoginAttempts Int      @default(0) @map("failed_login_attempts")
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz
+  lastLogin         DateTime?  @map("last_login") @db.Timestamptz
+  refreshToken      String?    @map("refresh_token")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime?  @map("deleted_at") @db.Timestamptz
+
+  hospitalId String?   @map("hospital_id") @db.Uuid
+  hospital   Hospital? @relation(fields: [hospitalId], references: [id])
+
+  doctorProfile        DoctorProfile?
+  emergencies          EmergencyRequest[]
+  reservations         Reservation[]
+  bloodRequests        BloodRequest[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  otps                 OTP[]
+  sessions             Session[]
+  verificationDocuments VerificationDocument[]
+  ambulanceAssignments AmbulanceAssignment[]
+
+  @@map("users")
+}
+
+model Hospital {
+  id              String     @id @default(uuid()) @db.Uuid
+  name            String
+  address         String
+  city            String?
+  state           String?
+  country         String?
+  latitude        Float?
+  longitude       Float?
+  phone           String?
+  email           String?
+  website         String?
+  status          String     @default("active")
+  specializations String[]
+  totalBeds       Int        @default(0) @map("total_beds")
+  availableBeds   Int        @default(0) @map("available_beds")
+  icuBeds         Int        @default(0) @map("icu_beds")
+  availableIcuBeds Int       @default(0) @map("available_icu_beds")
+  nicuBeds        Int        @default(0) @map("nicu_beds")
+  availableNicuBeds Int     @default(0) @map("available_nicu_beds")
+  ventilatorCount Int        @default(0) @map("ventilator_count")
+  availableVentilators Int   @default(0) @map("available_ventilators")
+  rating          Float?
+  verified        Boolean    @default(false)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz
+
+  users        User[]
+  resources    Resource[]
+  bloodStocks  BloodStock[]
+  reservations Reservation[]
+  emergencies  EmergencyRequest[]
+  ambulances   Ambulance[]
+
+  @@map("hospitals")
+}
+
+model DoctorProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  user            User     @relation(fields: [userId], references: [id])
+  licenseNumber   String   @map("license_number")
+  specialization  String
+  experienceYears Int?     @map("experience_years")
+  hospitalAffiliation String? @map("hospital_affiliation")
+  verified        Boolean  @default(false)
+  verifiedAt      DateTime? @map("verified_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("doctor_profiles")
+}
+
+model Ambulance {
+  id              String          @id @default(uuid()) @db.Uuid
+  hospitalId      String          @map("hospital_id") @db.Uuid
+  hospital        Hospital        @relation(fields: [hospitalId], references: [id])
+  unitNumber      String          @map("unit_number")
+  status          AmbulanceStatus @default(AVAILABLE)
+  currentLat      Float?          @map("current_latitude")
+  currentLng      Float?          @map("current_longitude")
+  driverName      String?         @map("driver_name")
+  driverPhone     String?         @map("driver_phone")
+  estimatedArrival DateTime?       @map("estimated_arrival") @db.Timestamptz
+  lastLocationUpdate DateTime?    @map("last_location_update") @db.Timestamptz
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  assignments AmbulanceAssignment[]
+  emergencies EmergencyRequest[]
+
+  @@map("ambulances")
+}
+
+model AmbulanceAssignment {
+  id           String   @id @default(uuid()) @db.Uuid
+  ambulanceId  String   @map("ambulance_id") @db.Uuid
+  ambulance    Ambulance @relation(fields: [ambulanceId], references: [id])
+  emergencyId  String   @map("emergency_id") @db.Uuid
+  emergency    EmergencyRequest @relation(fields: [emergencyId], references: [id])
+  driverId     String?  @map("driver_id") @db.Uuid
+  driver       User?    @relation(fields: [driverId], references: [id])
+  status       String   @default("DISPATCHED")
+  routeData    Json?    @map("route_data")
+  startedAt    DateTime @default(now()) @map("started_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("ambulance_assignments")
+}
+
+model EmergencyRequest {
+  id               String            @id @default(uuid()) @db.Uuid
+  reportedById     String            @map("reported_by") @db.Uuid
+  reportedBy       User              @relation(fields: [reportedById], references: [id])
+  patientName      String?           @map("patient_name")
+  patientAge       Int?
+  symptoms         String
+  severity         EmergencySeverity?
+  priorityScore    Int?              @map("priority_score")
+  status           EmergencyStatus   @default(PENDING)
+  assignedHospitalId String?          @map("assigned_hospital_id") @db.Uuid
+  assignedHospital   Hospital?        @relation(fields: [assignedHospitalId], references: [id])
+  assignedAmbulanceId String?         @map("assigned_ambulance_id") @db.Uuid
+  assignedAmbulance   Ambulance?      @relation(fields: [assignedAmbulanceId], references: [id])
+  locationAddress   String?           @map("location_address")
+  latitude          Float?
+  longitude         Float?
+  recommendedResponse String?          @map("recommended_response")
+  recommendedHospitalId String?        @map("recommended_hospital_id") @db.Uuid
+  notes             String?
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz
+
+  reservations  Reservation[]
+  bloodRequests BloodRequest[]
+  assignments   AmbulanceAssignment[]
+
+  @@map("emergency_requests")
+}
+
+model Resource {
+  id                 String         @id @default(uuid()) @db.Uuid
+  hospitalId         String         @map("hospital_id") @db.Uuid
+  hospital           Hospital       @relation(fields: [hospitalId], references: [id])
+  resourceType       ResourceType   @map("resource_type")
+  name               String?
+  status             ResourceStatus @default(AVAILABLE)
+  locationInHospital String?        @map("location_in_hospital")
+  notes              String?
+  lastUpdatedById    String?        @map("last_updated_by") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt          DateTime?      @map("deleted_at") @db.Timestamptz
+
+  reservations Reservation[]
+
+  @@map("resources")
+}
+
+model Reservation {
+  id                 String            @id @default(uuid()) @db.Uuid
+  userId             String            @map("user_id") @db.Uuid
+  user               User              @relation(fields: [userId], references: [id])
+  hospitalId         String            @map("hospital_id") @db.Uuid
+  hospital           Hospital          @relation(fields: [hospitalId], references: [id])
+  resourceId         String?           @map("resource_id") @db.Uuid
+  resource           Resource?         @relation(fields: [resourceId], references: [id])
+  emergencyId        String?           @map("emergency_id") @db.Uuid
+  emergency          EmergencyRequest? @relation(fields: [emergencyId], references: [id])
+  status             ReservationStatus @default(PENDING)
+  reservationDate    DateTime?         @map("reservation_date") @db.Timestamptz
+  expiryDate         DateTime?         @map("expiry_date") @db.Timestamptz
+  confirmedById      String?           @map("confirmed_by") @db.Uuid
+  cancellationReason String?           @map("cancellation_reason")
+  notes              String?
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("reservations")
+}
+
+model BloodStock {
+  id              String    @id @default(uuid()) @db.Uuid
+  hospitalId      String    @map("hospital_id") @db.Uuid
+  hospital        Hospital  @relation(fields: [hospitalId], references: [id])
+  bloodType       BloodType @map("blood_type")
+  unitsAvailable  Int       @default(0) @map("units_available")
+  unitsReserved   Int       @default(0) @map("units_reserved")
+  lastUpdated     DateTime  @default(now()) @map("last_updated") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([hospitalId, bloodType])
+  @@map("blood_stocks")
+}
+
+model BloodRequest {
+  id            String             @id @default(uuid()) @db.Uuid
+  requestedById String             @map("requested_by") @db.Uuid
+  requestedBy   User               @relation(fields: [requestedById], references: [id])
+  hospitalId    String?            @map("hospital_id") @db.Uuid
+  patientName   String?            @map("patient_name")
+  bloodType     BloodType          @map("blood_type")
+  unitsNeeded   Int                @default(1) @map("units_needed")
+  urgency       EmergencySeverity  @default(NORMAL)
+  status        String             @default("PENDING")
+  emergencyId   String?            @map("emergency_id") @db.Uuid
+  emergency     EmergencyRequest?  @relation(fields: [emergencyId], references: [id])
+  fulfilledAt   DateTime?          @map("fulfilled_at") @db.Timestamptz
+  notes         String?
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("blood_requests")
+}
+
+model Notification {
+  id                String           @id @default(uuid()) @db.Uuid
+  recipientId       String           @map("recipient_id") @db.Uuid
+  recipient         User             @relation(fields: [recipientId], references: [id])
+  type              NotificationType
+  title             String
+  message           String
+  channel           String           @default("IN_APP")
+  isRead            Boolean          @default(false) @map("is_read")
+  readAt            DateTime?        @map("read_at") @db.Timestamptz
+  relatedEntityType String?          @map("related_entity_type")
+  relatedEntityId   String?          @map("related_entity_id") @db.Uuid
+  metadata          Json             @default("{}")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  user       User?     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id") @db.Uuid
+  oldValues  Json?     @map("old_values")
+  newValues  Json?     @map("new_values")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("audit_logs")
+}
+
+model OTP {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  code      String
+  type      String   @default("EMAIL_VERIFICATION")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("otps")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  user         User     @relation(fields: [userId], references: [id])
+  refreshToken String   @unique @map("refresh_token")
+  deviceInfo   String?  @map("device_info")
+  ipAddress    String?  @map("ip_address")
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("sessions")
+}
+
+model VerificationDocument {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  user        User     @relation(fields: [userId], references: [id])
+  documentType String  @map("document_type")
+  documentUrl String   @map("document_url")
+  status      String   @default("PENDING")
+  verifiedBy  String?  @map("verified_by") @db.Uuid
+  verifiedAt  DateTime? @map("verified_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("verification_documents")
+}
+
+model RouteTracking {
+  id           String   @id @default(uuid()) @db.Uuid
+  assignmentId String   @map("assignment_id") @db.Uuid
+  latitude     Float
+  longitude    Float
+  timestamp    DateTime @default(now()) @db.Timestamptz
+  speed        Float?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("route_trackings")
+}
+
+model Report {
+  id          String      @id @default(uuid()) @db.Uuid
+  generatedBy String      @map("generated_by") @db.Uuid
+  reportType  String      @map("report_type")
+  title       String?
+  parameters  Json        @default("{}")
+  data        Json        @default("{}")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("reports")
+}
+
+model Analytics {
+  id         String   @id @default(uuid()) @db.Uuid
+  metric     String
+  value      Float
+  period     String
+  date       DateTime @default(now()) @db.Date
+  metadata   Json?    @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("analytics")
+}
